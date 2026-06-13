@@ -19,7 +19,80 @@
           <option v-for="level in levels" :key="level.id" :value="level.id">{{ level.name }}</option>
         </select>
       </label>
+      <button class="secondary-button" @click="checkDuplicates">
+        <UsersMerge class="icon-inline" />
+        检查重复手机号
+      </button>
     </section>
+
+  <div v-if="duplicates.length" class="panel merge-panel">
+    <div class="panel-header">
+      <h2><UsersMerge class="icon-inline" /> 重复手机号会员</h2>
+      <span class="count-badge warn">{{ duplicates.length }} 个手机号重复</span>
+    </div>
+    <div v-for="group in duplicates" :key="group.phone" class="duplicate-group">
+      <div class="duplicate-phone">
+        <strong>{{ group.phone }}</strong>
+        <span>共 {{ group.members.length }} 个账号</span>
+      </div>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>姓名</th>
+            <th>等级</th>
+            <th>积分</th>
+            <th>偏好</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr
+            v-for="member in group.members"
+            :key="member.id"
+            :class="{
+              'merge-source': selectedSource?.id === member.id,
+              'merge-target': selectedTarget?.id === member.id,
+            }"
+          >
+            <td>{{ member.name }}</td>
+            <td>{{ member.level?.name }}</td>
+            <td>{{ member.points }}</td>
+            <td>{{ member.favorite_categories.join('、') }}</td>
+            <td>
+              <div class="action-buttons">
+                <button
+                  class="small-button"
+                  :class="{ active: selectedSource?.id === member.id }"
+                  @click.stop="selectSource(member)"
+                >
+                  设为源
+                </button>
+                <button
+                  class="small-button primary"
+                  :class="{ active: selectedTarget?.id === member.id }"
+                  @click.stop="selectTarget(member)"
+                >
+                  设为目标
+                </button>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <div v-if="selectedSource && selectedTarget && selectedSource.phone === selectedTarget.phone" class="merge-actions">
+        <div class="merge-preview">
+          <span>将 <strong>{{ selectedSource.name }}</strong> (ID: {{ selectedSource.id }}) 的积分和记录合并到</span>
+          <span> <strong>{{ selectedTarget.name }}</strong> (ID: {{ selectedTarget.id }})</span>
+        </div>
+        <button class="primary-button" @click="doMerge">
+          确认合并
+        </button>
+        <button class="secondary-button" @click="clearMergeSelection">
+          取消
+        </button>
+      </div>
+    </div>
+  </div>
 
   <div class="content-grid two-columns">
     <section class="panel">
@@ -100,7 +173,7 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
-import { BadgePercent, Crown, Tags, Users } from 'lucide-vue-next'
+import { BadgePercent, Crown, Tags, Users, UsersMerge } from 'lucide-vue-next'
 
 import { levelApi } from '../api/levels'
 import { memberApi } from '../api/members'
@@ -112,12 +185,15 @@ import { keepList } from '../utils/dataState'
 
 const members = ref([...fallbackMembers])
 const levels = ref([...fallbackLevels])
+const duplicates = ref([])
 const favoriteText = ref('')
 const message = ref('')
 const messageType = ref('success')
 const keyword = ref('')
 const levelFilter = ref(0)
 const selectedMember = ref(null)
+const selectedSource = ref(null)
+const selectedTarget = ref(null)
 const form = reactive({
   name: '',
   phone: '',
@@ -175,6 +251,58 @@ async function submit() {
 
 function selectMember(member) {
   selectedMember.value = member
+}
+
+async function checkDuplicates() {
+  try {
+    const data = await memberApi.getDuplicates().catch(() => [])
+    duplicates.value = data
+    if (data.length === 0) {
+      message.value = '未发现重复手机号的会员'
+      messageType.value = 'success'
+    } else {
+      message.value = `发现 ${data.length} 个重复手机号`
+      messageType.value = 'warn'
+    }
+  } catch (error) {
+    message.value = error.message
+    messageType.value = 'error'
+  }
+}
+
+function selectSource(member) {
+  if (selectedTarget?.id === member.id) {
+    selectedTarget.value = null
+  }
+  selectedSource.value = member
+}
+
+function selectTarget(member) {
+  if (selectedSource?.id === member.id) {
+    selectedSource.value = null
+  }
+  selectedTarget.value = member
+}
+
+function clearMergeSelection() {
+  selectedSource.value = null
+  selectedTarget.value = null
+}
+
+async function doMerge() {
+  if (!selectedSource.value || !selectedTarget.value) {
+    return
+  }
+  try {
+    const result = await memberApi.merge(selectedSource.value.id, selectedTarget.value.id)
+    message.value = `合并成功！合并积分 ${result.merged_points}，${result.merged_records_count} 条积分记录，${result.merged_orders_count} 条预售订单`
+    messageType.value = 'success'
+    clearMergeSelection()
+    await Promise.all([loadData(), checkDuplicates()])
+  } catch (error) {
+    message.value = error.message
+    messageType.value = 'error'
+  }
 }
 
 onMounted(loadData)

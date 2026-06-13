@@ -26,3 +26,20 @@ class MemberUpdate(BaseModel):
 class Member(MemberBase):
     id: int
     level: Level | None = None
+
+
+class MemberMergeRequest(BaseModel):
+    source_member_id: int = Field(gt=0)
+    target_member_id: int = Field(gt=0)
+
+
+class DuplicatePhoneItem(BaseModel):
+    phone: str
+    members: list[Member]
+
+
+class MemberMergeResult(BaseModel):
+    target_member: Member
+    merged_points: int
+    merged_records_count: int
+    merged_orders_count: int
